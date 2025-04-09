@@ -227,7 +227,7 @@ mod internal {
         kCMPixelFormat_24RGB, kCMPixelFormat_32BGRA, kCMPixelFormat_422YpCbCr8_yuvs,
         kCMPixelFormat_8IndexedGray_WhiteIsZero, kCMVideoCodecType_422YpCbCr8,
         kCMVideoCodecType_JPEG, kCMVideoCodecType_JPEG_OpenDML, CMFormatDescriptionGetMediaSubType,
-        CMFormatDescriptionRef, CMSampleBufferRef, CMTime, CMVideoDimensions,
+        CMFormatDescriptionRef, CMSampleBufferRef, CMVideoDimensions,
     };
     use core_video_sys::{
         kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
