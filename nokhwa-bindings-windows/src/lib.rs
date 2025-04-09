@@ -36,6 +36,7 @@ pub mod wmf {
     };
     use once_cell::sync::Lazy;
     use std::ffi::c_void;
+    use std::time::{Duration, SystemTime};
     use std::{
         borrow::Cow,
         cell::Cell,
@@ -50,6 +51,7 @@ pub mod wmf {
     use windows::Win32::Media::MediaFoundation::{
         IMFMediaType, MFCreateSample, MF_SOURCE_READER_FIRST_VIDEO_STREAM,
     };
+    use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
     use windows::{
         core::{Interface, GUID, PWSTR},
         Win32::{
@@ -425,6 +427,8 @@ pub mod wmf {
         device_specifier: CameraInfo,
         device_format: CameraFormat,
         source_reader: IMFSourceReader,
+        perf_freq: i64,
+        start_time: (i64, SystemTime),
     }
 
     impl MediaFoundationDevice {
@@ -509,6 +513,16 @@ pub mod wmf {
                         device_specifier: device_descriptor,
                         device_format: CameraFormat::default(),
                         source_reader,
+                        perf_freq: unsafe {
+                            let mut freq = 0;
+                            QueryPerformanceFrequency(&mut freq);
+                            freq
+                        },
+                        start_time: unsafe {
+                            let mut time = 0;
+                            QueryPerformanceCounter(&mut time);
+                            (time, SystemTime::now())
+                        },
                     })
                 }
                 CameraIndex::String(s) => {
@@ -1119,7 +1133,7 @@ pub mod wmf {
             Ok(())
         }
 
-        pub fn raw_bytes(&mut self) -> Result<Cow<[u8]>, NokhwaError> {
+        pub fn raw_bytes(&mut self) -> Result<(Cow<[u8]>, SystemTime), NokhwaError> {
             let mut imf_sample: Option<IMFSample> = match unsafe { MFCreateSample() } {
                 Ok(sample) => Some(sample),
                 Err(why) => {
@@ -1156,9 +1170,17 @@ pub mod wmf {
                 }
             };
 
-            unsafe {
-                dbg!(imf_sample.GetSampleTime());
-            }
+            let time = unsafe {
+                let time = imf_sample
+                    .GetSampleTime()
+                    .map_err(|_| NokhwaError::ReadFrameError("Invalid timestamp".to_string()))?;
+
+                let elapsed = time - self.start_time.0;
+
+                let elapsed = Duration::from_secs_f64(elapsed as f64 / self.perf_freq as f64);
+
+                self.start_time.1.checked_add(elapsed).unwrap()
+            };
 
             let buffer = match unsafe { imf_sample.ConvertToContiguousBuffer() } {
                 Ok(buf) => buf,
@@ -1194,7 +1216,7 @@ pub mod wmf {
                 ) as &[u8]);
             }
 
-            Ok(Cow::from(data_slice))
+            Ok((Cow::from(data_slice), time))
         }
 
         pub fn stop_stream(&mut self) {

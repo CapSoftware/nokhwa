@@ -25,7 +25,7 @@ use nokhwa_core::{
         RequestedFormatType, Resolution,
     },
 };
-use std::{borrow::Cow, collections::HashMap};
+use std::{alloc::System, borrow::Cow, collections::HashMap, time::SystemTime};
 
 /// The backend that deals with Media Foundation on Windows.
 /// To see what this does, please see [`CaptureBackendTrait`].
@@ -244,16 +244,20 @@ impl CaptureBackendTrait for MediaFoundationCaptureDevice {
     fn frame(&mut self) -> Result<Buffer, NokhwaError> {
         self.refresh_camera_format()?;
         let self_ctrl = self.camera_format();
+        let (bytes, timestamp) = self.inner.raw_bytes()?;
         Ok(Buffer::new(
             self_ctrl.resolution(),
-            &self.inner.raw_bytes()?,
+            &bytes,
             self_ctrl.format(),
+            Some(timestamp),
         ))
     }
 
-    fn frame_raw(&mut self) -> Result<(Cow<[u8]>, FrameFormat), NokhwaError> {
+    fn frame_raw(&mut self) -> Result<(Cow<[u8]>, FrameFormat, Option<SystemTime>), NokhwaError> {
         let format = self.frame_format();
-        self.inner.raw_bytes().map(|b| (b, format))
+        self.inner
+            .raw_bytes()
+            .map(|(b, timestamp)| (b, format, Some(timestamp)))
     }
 
     fn stop_stream(&mut self) -> Result<(), NokhwaError> {

@@ -27,6 +27,8 @@ extern crate objc;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod internal {
 
+    pub use core_media_sys::CMTime;
+
     #[allow(non_snake_case)]
     pub mod core_media {
         // all of this is stolen from bindgen
@@ -2424,5 +2426,3 @@ mod internal {
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub use crate::internal::*;
-
-pub use core_media_sys::CMTime;
