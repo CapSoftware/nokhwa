@@ -33,8 +33,8 @@ mod internal {
         // steal it idc
         use crate::internal::CGFloat;
         use core_media_sys::{
-            CMBlockBufferRef, CMFormatDescriptionRef, CMSampleBufferRef, CMTime, CMVideoDimensions,
-            FourCharCode,
+            CMBlockBufferRef, CMClockRef, CMFormatDescriptionRef, CMSampleBufferRef, CMTime,
+            CMVideoDimensions, FourCharCode,
         };
         use objc::{runtime::Object, Message};
         use std::ops::Deref;
@@ -104,6 +104,8 @@ mod internal {
 
             pub fn CMSampleBufferGetImageBuffer(sbuf: CMSampleBufferRef) -> CVImageBufferRef;
 
+            pub fn CMSampleBufferGetPresentationTimeStamp(sample: CMSampleBufferRef) -> CMTime;
+
             pub fn CVPixelBufferLockBaseAddress(
                 pixelBuffer: CVPixelBufferRef,
                 lockFlags: CVPixelBufferLockFlags,
@@ -122,6 +124,10 @@ mod internal {
             ) -> *mut std::os::raw::c_void;
 
             pub fn CVPixelBufferGetPixelFormatType(pixelBuffer: CVPixelBufferRef) -> OSType;
+
+            pub fn CMClockGetHostTimeClock() -> CMClockRef;
+
+            pub fn CMClockGetTime(clock: CMClockRef) -> CMTime;
         }
 
         #[repr(C)]
@@ -211,6 +217,10 @@ mod internal {
         base::Nil,
         foundation::{NSArray, NSInteger, NSString, NSUInteger},
     };
+    use core_media::{
+        CMClockGetHostTimeClock, CMClockGetTime, CMSampleBufferGetDataBuffer,
+        CMSampleBufferGetPresentationTimeStamp,
+    };
     use core_media_sys::{
         kCMPixelFormat_24RGB, kCMPixelFormat_32BGRA, kCMPixelFormat_422YpCbCr8_yuvs,
         kCMPixelFormat_8IndexedGray_WhiteIsZero, kCMVideoCodecType_422YpCbCr8,
@@ -236,7 +246,6 @@ mod internal {
         runtime::{Class, Object, Protocol, Sel, BOOL, NO, YES},
     };
     use once_cell::sync::Lazy;
-    use std::ffi::CString;
     use std::{
         borrow::Cow,
         cmp::Ordering,
@@ -246,6 +255,7 @@ mod internal {
         ffi::{c_float, c_void, CStr},
         sync::Arc,
     };
+    use std::{ffi::CString, time::SystemTime};
 
     const UTF8_ENCODING: usize = 4;
     type CGFloat = c_float;
@@ -411,6 +421,8 @@ mod internal {
                 didOutputSampleBuffer: CMSampleBufferRef,
                 _: *mut Object,
             ) {
+                let pts = unsafe { CMSampleBufferGetPresentationTimeStamp(didOutputSampleBuffer) };
+
                 let image_buffer: CVImageBufferRef =
                     unsafe { CMSampleBufferGetImageBuffer(didOutputSampleBuffer) };
                 unsafe {
@@ -430,7 +442,7 @@ mod internal {
                 // https://c.tenor.com/0e_zWtFLOzQAAAAC/needy-streamer-overload-needy-girl-overdose.gif
                 let bufferlck_cv: *const c_void = unsafe { msg_send![this, bufferPtr] };
                 let buffer_sndr = unsafe {
-                    let ptr = bufferlck_cv.cast::<Sender<(Vec<u8>, FrameFormat)>>();
+                    let ptr = bufferlck_cv.cast::<Sender<(Vec<u8>, FrameFormat, f64)>>();
                     Arc::from_raw(ptr)
                 };
 
@@ -442,7 +454,11 @@ mod internal {
                     }
                 };
 
-                if let Err(_) = buffer_sndr.send((buffer_as_vec, format)) {
+                if let Err(_) = buffer_sndr.send((
+                    buffer_as_vec,
+                    format,
+                    pts.value as f64 / pts.timescale as f64,
+                )) {
                     // FIXME: dont, what the fuck???
                     return;
                 }
@@ -698,7 +714,7 @@ mod internal {
     impl AVCaptureVideoCallback {
         pub fn new(
             device_spec: &CStr,
-            buffer: &Arc<Sender<(Vec<u8>, FrameFormat)>>,
+            buffer: &Arc<Sender<(Vec<u8>, FrameFormat, f64)>>,
         ) -> Result<Self, NokhwaError> {
             let cls = &CALLBACK_CLASS as &Class;
             let delegate: *mut Object = unsafe { msg_send![cls, alloc] };
@@ -2408,3 +2424,5 @@ mod internal {
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub use crate::internal::*;
+
+pub use core_media_sys::CMTime;

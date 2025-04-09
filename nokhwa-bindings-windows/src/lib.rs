@@ -1156,6 +1156,10 @@ pub mod wmf {
                 }
             };
 
+            unsafe {
+                dbg!(imf_sample.GetSampleTime());
+            }
+
             let buffer = match unsafe { imf_sample.ConvertToContiguousBuffer() } {
                 Ok(buf) => buf,
                 Err(why) => return Err(NokhwaError::ReadFrameError(why.to_string())),

@@ -15,6 +15,10 @@
  */
 #[cfg(target_os = "macos")]
 use flume::{Receiver, Sender};
+use nokhwa_bindings_macos::{
+    core_media::{CMClockGetHostTimeClock, CMClockGetTime},
+    CMTime,
+};
 #[cfg(target_os = "macos")]
 use nokhwa_bindings_macos::{
     AVCaptureDevice, AVCaptureDeviceInput, AVCaptureSession, AVCaptureVideoCallback,
@@ -33,7 +37,11 @@ use nokhwa_core::{
 #[cfg(target_os = "macos")]
 use std::{ffi::CString, sync::Arc};
 
-use std::{borrow::Cow, collections::HashMap};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    time::{Duration, SystemTime},
+};
 
 /// The backend struct that interfaces with V4L2.
 /// To see what this does, please see [`CaptureBackendTrait`].
@@ -54,8 +62,9 @@ pub struct AVFoundationCaptureDevice {
     info: CameraInfo,
     buffer_name: CString,
     format: CameraFormat,
-    frame_buffer_receiver: Arc<Receiver<(Vec<u8>, FrameFormat)>>,
-    fbufsnd: Arc<Sender<(Vec<u8>, FrameFormat)>>,
+    frame_buffer_receiver: Arc<Receiver<(Vec<u8>, FrameFormat, f64)>>,
+    fbufsnd: Arc<Sender<(Vec<u8>, FrameFormat, f64)>>,
+    start_time: (f64, SystemTime),
 }
 
 #[cfg(target_os = "macos")]
@@ -85,6 +94,17 @@ impl AVFoundationCaptureDevice {
             })?;
 
         let (send, recv) = flume::unbounded();
+
+        let start_time = unsafe {
+            let clock = CMClockGetHostTimeClock();
+            let time = CMClockGetTime(clock);
+
+            (
+                (time.value as f64 / time.timescale as f64),
+                SystemTime::now(),
+            )
+        };
+
         Ok(AVFoundationCaptureDevice {
             device,
             dev_input: None,
@@ -96,6 +116,7 @@ impl AVFoundationCaptureDevice {
             format: camera_fmt,
             frame_buffer_receiver: Arc::new(recv),
             fbufsnd: Arc::new(send),
+            start_time,
         })
     }
 
@@ -281,14 +302,22 @@ impl CaptureBackendTrait for AVFoundationCaptureDevice {
         self.refresh_camera_format()?;
         let cfmt = self.camera_format();
         let b = self.frame_raw()?;
-        let buffer = Buffer::new_from_cow(cfmt.resolution(), b.0, b.1);
+        let buffer = Buffer::new_from_cow(cfmt.resolution(), b.0, b.1, b.2);
         let _ = self.frame_buffer_receiver.drain();
         Ok(buffer)
     }
 
-    fn frame_raw(&mut self) -> Result<(Cow<[u8]>, FrameFormat), NokhwaError> {
+    fn frame_raw(&mut self) -> Result<(Cow<[u8]>, FrameFormat, Option<SystemTime>), NokhwaError> {
         let result = match self.frame_buffer_receiver.recv() {
-            Ok(recv) => Ok((Cow::from(recv.0), recv.1)),
+            Ok(recv) => {
+                let time = self
+                    .start_time
+                    .1
+                    .checked_add(Duration::from_secs_f64(recv.2 - self.start_time.0))
+                    .unwrap();
+
+                Ok((Cow::from(recv.0), recv.1, Some(time)))
+            }
             Err(why) => Err(NokhwaError::ReadFrameError(why.to_string())),
         };
         result

@@ -186,6 +186,7 @@ impl CallbackCamera {
             new_fmt.resolution(),
             &Vec::default(),
             self.camera_format()?.format(),
+            None,
         );
         let formats = vec![new_fmt.format()];
         let request = RequestedFormat::with_formats(RequestedFormatType::Exact(new_fmt), &formats);
@@ -264,8 +265,12 @@ impl CallbackCamera {
         *self
             .last_frame_captured
             .lock()
-            .map_err(|why| NokhwaError::GeneralError(why.to_string()))? =
-            Buffer::new(new_res, &Vec::default(), self.camera_format()?.format());
+            .map_err(|why| NokhwaError::GeneralError(why.to_string()))? = Buffer::new(
+            new_res,
+            &Vec::default(),
+            self.camera_format()?.format(),
+            None,
+        );
         self.camera
             .lock()
             .map_err(|why| NokhwaError::SetPropertyError {

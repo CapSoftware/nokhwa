@@ -818,6 +818,7 @@ mod internal {
     use std::borrow::Cow;
     use std::collections::HashMap;
     use std::marker::PhantomData;
+    use std::time::SystemTime;
 
     /// Attempts to convert a [`KnownCameraControl`] into a V4L2 Control ID.
     /// If the associated control is not found, this will return `None` (`ColorEnable`, `Roll`)
@@ -967,7 +968,9 @@ mod internal {
             todo!()
         }
 
-        fn frame_raw(&mut self) -> Result<(Cow<[u8]>, FrameFormat), NokhwaError> {
+        fn frame_raw(
+            &mut self,
+        ) -> Result<(Cow<[u8]>, FrameFormat, Option<SystemTime>), NokhwaError> {
             todo!()
         }
 

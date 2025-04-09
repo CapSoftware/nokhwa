@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::borrow::Cow;
+use std::{alloc::System, borrow::Cow, time::SystemTime};
 
 use crate::{
     error::NokhwaError,
@@ -33,17 +33,24 @@ pub struct Buffer {
     resolution: Resolution,
     buffer: Bytes,
     source_frame_format: FrameFormat,
+    timestamp: Option<SystemTime>,
 }
 
 impl Buffer {
     /// Creates a new buffer with a [`&[u8]`].
     #[must_use]
     #[inline]
-    pub fn new(res: Resolution, buf: &[u8], source_frame_format: FrameFormat) -> Self {
+    pub fn new(
+        res: Resolution,
+        buf: &[u8],
+        source_frame_format: FrameFormat,
+        timestamp: Option<SystemTime>,
+    ) -> Self {
         Self {
             resolution: res,
             buffer: Bytes::copy_from_slice(buf),
             source_frame_format,
+            timestamp,
         }
     }
 
@@ -54,11 +61,13 @@ impl Buffer {
         res: Resolution,
         buf: Cow<'_, [u8]>,
         source_frame_format: FrameFormat,
+        timestamp: Option<SystemTime>,
     ) -> Self {
         Self {
             resolution: res,
             buffer: buf.into_owned().into(),
             source_frame_format,
+            timestamp,
         }
     }
 
@@ -84,6 +93,10 @@ impl Buffer {
     #[must_use]
     pub fn source_frame_format(&self) -> FrameFormat {
         self.source_frame_format
+    }
+
+    pub fn timestamp(&self) -> Option<SystemTime> {
+        self.timestamp
     }
 
     /// Decodes a image with allocation using the provided [`FormatDecoder`].
